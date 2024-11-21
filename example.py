@@ -7,6 +7,8 @@ from gfn.modules import DiscretePolicyEstimator
 from gfn.samplers import Sampler
 from gfn.utils.modules import MLP  # is a simple multi-layer perceptron (MLP)
 
+import matplotlib.pyplot as plt
+import numpy as np
 # 1 - We define the environment.
 env = HyperGrid(ndim=4, height=8, R0=0.01)  # Grid of size 8x8x8x8
 
@@ -38,6 +40,8 @@ sampler = Sampler(estimator=pf_estimator)  # We use an on-policy sampler, based 
 optimizer = torch.optim.Adam(gfn.pf_pb_parameters(), lr=1e-3)
 optimizer.add_param_group({"params": gfn.logz_parameters(), "lr": 1e-1})
 
+
+losses=[]
 # 6 - We train the GFlowNet for 1000 iterations, with 16 trajectories per iteration
 for i in (pbar := tqdm(range(1000))):
     trajectories = sampler.sample_trajectories(env=env, n=16)
@@ -47,3 +51,10 @@ for i in (pbar := tqdm(range(1000))):
     optimizer.step()
     if i % 25 == 0:
         pbar.set_postfix({"loss": loss.item()})
+        losses.append([i,loss.item()])
+
+print(losses)
+data = np.array(losses)
+x, y = data.T
+plt.scatter(x,y)
+plt.show()
