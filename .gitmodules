@@ -1,0 +1,3 @@
+[submodule "first_approach/torchgfn"]
+	path = first_approach/torchgfn
+	url = https://github.com/GFNOrg/torchgfn.git
