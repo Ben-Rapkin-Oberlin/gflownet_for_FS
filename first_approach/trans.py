@@ -65,10 +65,7 @@ class FeatureSelectionTransformer(nn.Module):
         return x
 
 class TransformerPolicyHead(nn.Module):
-    """
-    Policy head for the transformer architecture.
-    Can be used for both forward and backward policies.
-    """
+    """Policy head with proper numerical stability."""
     def __init__(self, d_model: int, output_dim: int):
         super().__init__()
         self.head = nn.Sequential(
@@ -76,9 +73,13 @@ class TransformerPolicyHead(nn.Module):
             nn.ReLU(),
             nn.Linear(d_model, output_dim)
         )
-    
+        self.log_softmax = nn.LogSoftmax(dim=-1)
+        
     def forward(self, x):
-        return self.head(x)
+        # Apply network
+        logits = self.head(x)
+        # Don't apply softmax here - we'll handle it in the policy computation
+        return logits
 
 class TransformerLogFHead(nn.Module):
     """

@@ -51,7 +51,15 @@ class FeatureSelectionEnvWithReward(FeatureSelectionEnv):
     def log_reward(self, final_states):
         """Calculate log reward based on model performance."""
         rewards = []
-        for state in final_states:
+        
+        # Handle States object
+        if hasattr(final_states, 'tensor'):
+            states_tensor = final_states.tensor
+        else:
+            states_tensor = final_states
+            
+        # Convert tensor to numpy arrays batch-wise
+        for state in states_tensor:
             # Convert to numpy for sklearn
             feature_mask = state.cpu().numpy()
             
@@ -67,7 +75,12 @@ class FeatureSelectionEnvWithReward(FeatureSelectionEnv):
             log_reward = np.log(max(score, 1e-10))
             rewards.append(log_reward)
         
-        return torch.tensor(rewards, device=final_states.device)
+        # Create rewards tensor with explicit dtype
+        rewards_tensor = torch.tensor(rewards, 
+                                    device=states_tensor.device, 
+                                    dtype=torch.float32)  # Match environment dtype
+        return rewards_tensor
+
 
 def create_synthetic_dataset(n_samples=1000, n_features=20):
     """Create a synthetic dataset for testing."""
@@ -101,9 +114,11 @@ def main():
     )
     
     # Create evaluator
+    print("Creating evaluator...")
     evaluator = ModelEvaluator(X_train, X_test, y_train, y_test)
     
     # Create environment with reward
+    print("Creating environment...")
     env = FeatureSelectionEnvWithReward(
         n_features=20,      # Total features
         target_features=10,  # We want to select 10 features
@@ -113,6 +128,8 @@ def main():
     # Initialize GFlowNet
     print("Initializing GFlowNet...")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+    
     gfn = FeatureSelectionGFlowNet(
         n_features=20,
         target_features=10,
@@ -122,50 +139,68 @@ def main():
         lambda_=0.9
     ).to(device)
     
+    # Ensure environment tensors are on the correct device
+    env.s0 = env.s0.to(device)
+    env.sf = env.sf.to(device)
+    
     # Create optimizer
     optimizer = gfn.get_optimizer(lr_transformer=1e-4, lr_heads=1e-3)
     
     # Training loop
-    n_epochs = 100
+    n_epochs = 5
     batch_size = 16
     best_score = float('-inf')
     best_features = None
     
     print("Starting training...")
     for epoch in tqdm(range(n_epochs)):
-        # Sample trajectories
-        trajectories = gfn.sampler.sample_trajectories(env, n=batch_size)
-        
-        # Calculate loss
-        loss = gfn.gflownet.loss(env, trajectories)
-        
-        # Backward pass and optimization
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        
-        # Every 10 epochs, evaluate current best feature set
-        if epoch % 10 == 0:
-            with torch.no_grad():
-                # Sample multiple feature sets
-                feature_sets = gfn.sample_feature_sets(n_samples=5)
-                
-                # Evaluate each feature set
-                for feature_set in feature_sets:
-                    score = evaluator.evaluate_features(feature_set.cpu().numpy())
+        try:
+            # Sample trajectories
+            trajectories = gfn.sampler.sample_trajectories(env, n=batch_size)
+            
+            # Calculate loss
+            loss = gfn.gflownet.loss(env, trajectories)
+            
+            # Backward pass and optimization
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(gfn.parameters(), max_norm=1.0)
+            optimizer.step()
+            
+            # Every 10 epochs, evaluate current best feature set
+            if epoch % 10 == 0:
+                with torch.no_grad():
+                    # Sample multiple feature sets
+                    feature_sets = gfn.sample_feature_sets(n_samples=5)
                     
-                    if score > best_score:
-                        best_score = score
-                        best_features = feature_set.cpu().numpy()
-                
-                print(f"\nEpoch {epoch}")
-                print(f"Loss: {loss.item():.4f}")
-                print(f"Best score so far: {best_score:.4f}")
-                print("Best features:", np.where(best_features == 1)[0].tolist())
+                    # Evaluate each feature set
+                    for i, feature_set in enumerate(feature_sets):
+                        score = evaluator.evaluate_features(feature_set.cpu().numpy())
+                        print(f"Feature set {i} score: {score:.4f}")
+                        
+                        if score > best_score:
+                            best_score = score
+                            best_features = feature_set.cpu().numpy()
+                    
+                    print(f"\nEpoch {epoch}")
+                    print(f"Loss: {loss.item():.4f}")
+                    print(f"Best score so far: {best_score:.4f}")
+                    if best_features is not None:
+                        print("Best features:", np.where(best_features == 1)[0].tolist())
+        
+        except Exception as e:
+            print(f"Error in epoch {epoch}:")
+            print(e)
+            import traceback
+            traceback.print_exc()
+            break
     
     print("\nTraining completed!")
     print("Final best score:", best_score)
-    print("Selected features:", np.where(best_features == 1)[0].tolist())
+    if best_features is not None:
+        print("Selected features:", np.where(best_features == 1)[0].tolist())
+    else:
+        print("No valid feature sets found")
     
     # Evaluate all features baseline
     all_features_score = evaluator.evaluate_features(np.ones(20))
