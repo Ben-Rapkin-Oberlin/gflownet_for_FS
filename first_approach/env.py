@@ -215,25 +215,58 @@ class FeatureSelectionEnv(DiscreteEnv):
                 
                 # Handle sink states
                 is_sink = torch.all(states_tensor == self.sf.to(dtype=states_tensor.dtype), dim=1)
+                
+                # Initialize masks if they don't exist
+                if not hasattr(states, 'forward_masks'):
+                    self.forward_masks = torch.zeros(states_tensor.shape[0], self.n_actions, 
+                                                   dtype=torch.bool, device=states_tensor.device)
+                if not hasattr(states, 'backward_masks'):
+                    self.backward_masks = torch.zeros(states_tensor.shape[0], self.n_actions - 1, 
+                                                    dtype=torch.bool, device=states_tensor.device)
+                
+                # For non-sink states, update masks normally
+                if (~is_sink).any():
+                    fwd_masks, back_masks = self.update_masks(states_tensor[~is_sink])
+                    self.forward_masks[~is_sink] = fwd_masks
+                    self.backward_masks[~is_sink] = back_masks
+                
+                # For sink states, set special mask values
                 if is_sink.any():
-                        # Set backward masks for sink states to all True
-                        # This ensures the GFlowNet can compute valid backward probabilities
-                        self.backward_masks = torch.ones(states_tensor.shape[0], self.n_actions - 1, 
-                                                        dtype=torch.bool, device=states_tensor.device)
-                        self.backward_masks[is_sink] = True
-                        
-                        # Set forward masks for sink states to all False
-                        self.forward_masks = torch.zeros(states_tensor.shape[0], self.n_actions, 
-                                                        dtype=torch.bool, device=states_tensor.device)
-                        
-                # Verify masks exist and are valid
-                assert hasattr(self, 'forward_masks') and hasattr(self, 'backward_masks'), \
-                    "Masks not properly initialized"
+                    # Sink states can't take any forward actions
+                    self.forward_masks[is_sink] = False
+                    
+                    # For sink states, set uniform backward probability over all possible features
+                    self.backward_masks[is_sink] = torch.ones(self.n_actions - 1, 
+                                                            dtype=torch.bool, 
+                                                            device=states_tensor.device)
+                
+                # Verify masks and print debug info
+                print("\nCleanup Trajectories Debug:")
+                print(f"Total states: {len(states_tensor)}")
+                print(f"Sink states: {is_sink.sum().item()}")
+                print(f"Non-sink states: {(~is_sink).sum().item()}")
+                print(f"Forward mask sums: {self.forward_masks.sum(dim=1).tolist()}")
+                print(f"Backward mask sums: {self.backward_masks.sum(dim=1).tolist()}")
+                
+                # Verify masks
                 assert self.forward_masks.shape[1] == self.n_actions, \
                     f"Invalid forward mask shape: {self.forward_masks.shape}"
                 assert self.backward_masks.shape[1] == self.n_actions - 1, \
                     f"Invalid backward mask shape: {self.backward_masks.shape}"
-   
+                
+                # Print details for first few states
+                print("\nDetailed mask information for first 3 states:")
+                for i in range(min(3, len(states_tensor))):
+                    print(f"\nState {i}:")
+                    print(f"Is sink: {is_sink[i].item()}")
+                    print(f"Forward mask: {self.forward_masks[i].tolist()}")
+                    print(f"Backward mask: {self.backward_masks[i].tolist()}")
+                
+                # Add masks to states object if it exists
+                if hasattr(states, 'forward_masks'):
+                    states.forward_masks = self.forward_masks
+                if hasattr(states, 'backward_masks'):
+                    states.backward_masks = self.backward_masks
 
     def make_random_states_tensor(self, batch_shape: Tuple) -> torch.Tensor:
         """Create random valid states for initialization."""
