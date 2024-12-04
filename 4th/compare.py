@@ -159,10 +159,10 @@ def main():
         
     # Create synthetic dataset
     n_samples = 1000
-    n_features = 1300
+    n_features = 100
     n_informative = 0  # Number of informative features
     n_select = 10
-    n_episodes = 1500
+    n_episodes = 100
     batch_size = 6  # Adjust based on your GPU memory
         
     X_np, y_np, informative_indices = create_synthetic_dataset(
