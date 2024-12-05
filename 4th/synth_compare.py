@@ -312,14 +312,14 @@ def main():
     # Create synthetic dataset with explicitly typed parameters
     n_samples = 1000
     n_features = 100
-    n_informative = 2
-    n_multicollinear = 3
-    correlation_strength = 0.6
-    noise_level = 0.2
-    multicollinear_noise = 0.2
+    n_informative = 1
+    n_multicollinear = 1
+    correlation_strength = 0.4
+    noise_level = 1.5
+    multicollinear_noise = 0.4
 
-    n_select = 10
-    n_episodes = 5000
+    n_select = 15
+    n_episodes = 4000
     batch_size = 6
         
     X_np, y_np, feature_types = create_synthetic_dataset(
