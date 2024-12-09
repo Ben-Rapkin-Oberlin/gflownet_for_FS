@@ -7,8 +7,17 @@ def create_synthetic_dataset(
     n_informative=2,
     n_multicollinear=3,
     correlation_strength=0.7,
-    noise_level=0.1,
-    multicollinear_noise=0.1,
+    noise_level=0.1,           # Base noise level for target
+    multicollinear_noise=0.1,  # Noise in multicollinear relationships
+    feature_noise=0.1,         # Base noise level for features
+    noise_config={
+        'global_noise_scale': 1.0,    # Scales all noise in the dataset
+        'feature_noise_scale': 1.0,   # Additional scaling for feature noise
+        'target_noise_scale': 1.0,    # Additional scaling for target noise
+        'informative_noise': 0.1,     # Noise added to informative features
+        'noise_feature_std': 1.0,     # Standard deviation of noise features
+        'signal_to_noise_ratio': None # If set, adjusts noise to match desired SNR
+    },
     nonlinear_features=None,
     interaction_features=None,
     missing_data=None,
@@ -18,50 +27,62 @@ def create_synthetic_dataset(
     random_state=42
 ):
     """
-    Enhanced synthetic dataset generator with additional complex relationships.
+    Enhanced synthetic dataset generator with comprehensive noise control.
     
-    New Parameters:
-    --------------
-    nonlinear_features : dict or None
-        Config for non-linear relationships, e.g.,
-        {'polynomial': [0], 'exponential': [1], 'periodic': [2]}
-    interaction_features : list of tuples or None
-        Features to create interactions between, e.g., [(0,1), (1,2)]
-    missing_data : dict or None
-        Config for missing values, e.g.,
-        {'mechanism': 'MCAR', 'rate': 0.1}
-    feature_distributions : dict or None
-        Distribution type for features, e.g.,
-        {0: 'normal', 1: 'student_t', 2: 'lognormal', 3: 'categorical'}
-    outlier_config : dict or None
-        Config for outliers, e.g.,
-        {'contamination': 0.01, 'magnitude': 5}
-    heteroscedastic_noise : dict or None
-        Config for variance increases, e.g.,
-        {'dependent_feature': 0, 'noise_factor': 0.1}
+    New Noise Parameters:
+    --------------------
+    feature_noise : float
+        Base noise level for all features
+    
+    noise_config : dict
+        global_noise_scale : float
+            Master scaling factor for all noise in the dataset
+        feature_noise_scale : float
+            Additional scaling factor specifically for feature noise
+        target_noise_scale : float
+            Additional scaling factor specifically for target noise
+        informative_noise : float
+            Noise level specifically for informative features
+        noise_feature_std : float
+            Standard deviation of pure noise features
+        signal_to_noise_ratio : float or None
+            If set, adjusts noise to achieve desired SNR
     """
     rng = np.random.RandomState(random_state)
     
-    # Initialize feature matrix with random noise
-    X = rng.randn(n_samples, n_features)
+    # Apply global noise scaling
+    effective_noise_level = noise_level * noise_config['global_noise_scale'] * noise_config['target_noise_scale']
+    effective_feature_noise = feature_noise * noise_config['global_noise_scale'] * noise_config['feature_noise_scale']
+    effective_multicollinear_noise = multicollinear_noise * noise_config['global_noise_scale'] * noise_config['feature_noise_scale']
     
-    # Create informative features with specified distributions
+    # Initialize feature matrix with controlled random noise
+    X = rng.normal(0, noise_config['noise_feature_std'], (n_samples, n_features))
+    
+    # Create informative features with specified distributions and noise
     informative_indices = list(range(n_informative))
     informative_features = np.zeros((n_samples, n_informative))
     
     if feature_distributions:
         for idx in range(n_informative):
             dist = feature_distributions.get(idx, 'normal')
+            base_feature = None
+            
             if dist == 'normal':
-                informative_features[:, idx] = rng.randn(n_samples)
+                base_feature = rng.randn(n_samples)
             elif dist == 'student_t':
-                informative_features[:, idx] = stats.t.rvs(df=3, size=n_samples, random_state=rng)
+                base_feature = stats.t.rvs(df=3, size=n_samples, random_state=rng)
             elif dist == 'lognormal':
-                informative_features[:, idx] = rng.lognormal(0, 1, n_samples)
+                base_feature = rng.lognormal(0, 1, n_samples)
             elif dist == 'categorical':
-                informative_features[:, idx] = rng.choice(3, size=n_samples)
+                base_feature = rng.choice(3, size=n_samples)
+                
+            # Add controlled noise to informative features
+            noise = rng.normal(0, noise_config['informative_noise'], n_samples)
+            informative_features[:, idx] = base_feature + noise
     else:
-        informative_features = rng.randn(n_samples, n_informative)
+        base_features = rng.randn(n_samples, n_informative)
+        noise = rng.normal(0, noise_config['informative_noise'], (n_samples, n_informative))
+        informative_features = base_features + noise
 
     # Create base target variable
     y = np.zeros(n_samples)
@@ -86,7 +107,7 @@ def create_synthetic_dataset(
             if i < n_informative and j < n_informative:
                 y += 0.2 * informative_features[:, i] * informative_features[:, j]
 
-    # Create multicollinear features
+    # Create multicollinear features with controlled noise
     multicollinear_indices = []
     current_idx = n_informative
     
@@ -96,7 +117,7 @@ def create_synthetic_dataset(
         
         for j in range(n_multicollinear):
             correlation = rng.uniform(0.7, 0.9)
-            noise = rng.normal(0, multicollinear_noise, n_samples)
+            noise = rng.normal(0, effective_multicollinear_noise, n_samples)
             X[:, related_indices[j]] = (correlation * informative_features[:, inf_idx] + 
                                       np.sqrt(1 - correlation**2) * noise)
         
@@ -105,16 +126,25 @@ def create_synthetic_dataset(
     # Place informative features in the matrix
     X[:, informative_indices] = informative_features
     
+    # Add noise to target based on configuration
+    if noise_config['signal_to_noise_ratio'] is not None:
+        # Calculate signal power
+        signal_power = np.var(y)
+        # Calculate required noise power for desired SNR
+        desired_noise_power = signal_power / noise_config['signal_to_noise_ratio']
+        # Adjust noise level to achieve desired SNR
+        effective_noise_level = np.sqrt(desired_noise_power)
+    
     # Add heteroscedastic noise if configured
     if heteroscedastic_noise:
         dep_feature = heteroscedastic_noise['dependent_feature']
-        noise_factor = heteroscedastic_noise['noise_factor']
+        noise_factor = heteroscedastic_noise['noise_factor'] * noise_config['global_noise_scale']
         variance = np.exp(X[:, dep_feature])
         noise = rng.normal(0, noise_factor * variance)
         y += noise
     else:
         # Add homoscedastic noise
-        y += rng.normal(0, noise_level, n_samples)
+        y += rng.normal(0, effective_noise_level, n_samples)
     
     # Add outliers if configured
     if outlier_config:
@@ -127,7 +157,6 @@ def create_synthetic_dataset(
     if missing_data:
         mask = rng.random(X.shape) < missing_data['rate']
         if missing_data['mechanism'] == 'MAR':
-            # Make missing rate dependent on first informative feature
             mask = mask & (X[:, 0] > X[:, 0].mean())
         X[mask] = np.nan
     

@@ -138,7 +138,7 @@ def visualize_results(results, feature_types):
     a=str(time.time())
 
     plt.tight_layout()
-    plt.savefig('feature_selection_comparison_synthetic_'+a+'.png', 
+    plt.savefig('clean_5000_feature_selection_comparison_synthetic_'+a+'.png', 
                 bbox_inches='tight', 
                 dpi=300,
                 pad_inches=0.2)
@@ -260,7 +260,7 @@ def ensure_cpu(val):
 # Configuration for methods to include in visualization
 VISUALIZATION_CONFIG = {
     'GFlowNet Best': True,
-    'GFlowNet Average': True,
+    'GFlowNet Average': False,
     'SelectKBest (f_regression)': True,
     'SelectKBest (mutual_info)': True,
     'Random Forest': True,
@@ -273,10 +273,10 @@ def main():
     SEED = 41
     set_all_seeds(SEED)
 
-    n_select = 15
-    n_episodes = 500
+    n_select = 10
+    n_episodes = 5000
     batch_size = 6   
-    n_features = 50
+    n_features = 100
  
     # Device setup
     DEVICE_COUNT = torch.cuda.device_count()
@@ -288,38 +288,36 @@ def main():
     else:
         print("Using CPU")
     
-    # Dataset configuration
+
     dataset_config = {
         'n_samples': 1000,
         'n_features': n_features,
-        'n_informative': 2,
-        'n_multicollinear': 3,
-        'correlation_strength': 0.7,
-        'noise_level': 0.1,
-        'multicollinear_noise': 0.1,
-        'nonlinear_features': {
-            'polynomial': [0],
-            'exponential': [1]
+        'n_informative': 3,
+        'n_multicollinear': 2,
+        'correlation_strength': 0.9,    # Very strong correlations
+        'noise_level': 0.1,            # Minimal noise
+        'multicollinear_noise': 0.05,  # Very clean multicollinear relationships
+        'feature_noise': 0.1,
+        'noise_config': {
+            'global_noise_scale': 0.3,      # Low overall noise
+            'feature_noise_scale': 0.2,     # Clean features
+            'target_noise_scale': 0.2,      # Clean target
+            'informative_noise': 0.1,       # Very clear informative features
+            'noise_feature_std': 0.2,       # Low noise feature variance
+            'signal_to_noise_ratio': 20.0   # Very high SNR
         },
-        'interaction_features': [(0, 1)],
-        'missing_data': {
-            'mechanism': 'MCAR',
-            'rate': 0.00
-        },
+        'nonlinear_features': None,         # Only linear relationships
+        'interaction_features': None,        # No interactions
         'feature_distributions': {
-            0: 'normal',
-            1: 'student_t',
-            2: 'lognormal'
+            0: 'normal',                    # All normal distributions
+            1: 'normal',
+            2: 'normal'
         },
-        'outlier_config': {
-            'contamination': 0.01,
-            'magnitude': 5
-        },
-        'heteroscedastic_noise': {
-            'dependent_feature': 0,
-            'noise_factor': 0.1
-        }
+        'outlier_config': None,             # No outliers
+        'heteroscedastic_noise': None       # Homoscedastic noise only
     }
+
+
 
     print("\n=== Dataset Configuration ===")
     print(f"Total samples: {dataset_config['n_samples']}")
@@ -330,78 +328,9 @@ def main():
     # Create dataset
     X_np, y_np, feature_types = create_synthetic_dataset(**dataset_config)
     
-    print("\n=== Dataset Characteristics ===")
-    print("\nFeature Distributions:")
-    for feat_idx, dist_type in dataset_config['feature_distributions'].items():
-        print(f"Feature {feat_idx}: {dist_type}")
-        # Print distribution statistics
-        data = X_np[:, feat_idx]
-        print(f"  - Mean: {np.mean(data):.3f}")
-        print(f"  - Std: {np.std(data):.3f}")
-        print(f"  - Skewness: {stats.skew(data):.3f}")
-        print(f"  - Kurtosis: {stats.kurtosis(data):.3f}")
-    
-    print("\nNon-linear Relationships:")
-    for rel_type, features in dataset_config['nonlinear_features'].items():
-        print(f"{rel_type.capitalize()} relationships in features: {features}")
-    
-    print("\nInteraction Effects:")
-    for f1, f2 in dataset_config['interaction_features']:
-        # Calculate interaction strength
-        interaction_effect = np.corrcoef(X_np[:, f1] * X_np[:, f2], y_np)[0,1]
-        print(f"Interaction between features {f1} and {f2}: {interaction_effect:.3f} correlation with target")
-    
-    print("\nMissing Data Analysis:")
-    missing_counts = np.isnan(X_np).sum(axis=0)
-    print(f"Total missing values: {missing_counts.sum()}")
-    print(f"Features with missing values: {np.where(missing_counts > 0)[0]}")
-    print(f"Missing data mechanism: {dataset_config['missing_data']['mechanism']}")
-    
-    print("\nOutlier Information:")
-    print(f"Contamination rate: {dataset_config['outlier_config']['contamination']}")
-    print(f"Magnitude: {dataset_config['outlier_config']['magnitude']}x")
-    
-    print("\nHeteroscedastic Noise Analysis:")
-    dependent_feature = dataset_config['heteroscedastic_noise']['dependent_feature']
-    print(f"Noise dependent on feature: {dependent_feature}")
-    print(f"Noise factor: {dataset_config['heteroscedastic_noise']['noise_factor']}")
-    
-    # Calculate and print correlations
-    print("\n=== Correlation Analysis ===")
-    correlations = np.corrcoef(X_np.T)
-    y_correlations = np.corrcoef(X_np.T, y_np)[:-1, -1]
-    
-    print("\nLinear Correlations with Target:")
-    for idx in feature_types['informative']:
-        print(f"Informative feature {idx}: {y_correlations[idx]:.3f}")
-        # Calculate non-linear correlation (Spearman)
-        spearman_corr = stats.spearmanr(X_np[:, idx], y_np)[0]
-        print(f"  - Spearman correlation: {spearman_corr:.3f}")
-    
-    print("\nMulticollinear Relationships:")
-    for inf_idx in feature_types['informative']:
-        print(f"\nCorrelations with informative feature {inf_idx}:")
-        related_indices = [i for i in feature_types['multicollinear'] 
-                         if abs(correlations[inf_idx, i]) > 0.5]
-        for rel_idx in related_indices:
-            print(f"Feature {rel_idx}: {correlations[inf_idx, rel_idx]:.3f}")
-            
-    # Feature Type Summary
-    print("\n=== Feature Type Summary ===")
-    for ftype, indices in feature_types.items():
-        print(f"\n{ftype.capitalize()} Features:")
-        print(f"Indices: {sorted(indices)}")
-        print(f"Count: {len(indices)}")
-        
-        # Calculate average correlation with target
-        avg_corr = np.mean(abs(y_correlations[indices]))
-        print(f"Average absolute correlation with target: {avg_corr:.3f}")
-        
-        # Calculate inter-feature correlations
-        if len(indices) > 1:
-            inter_corrs = correlations[np.ix_(indices, indices)]
-            avg_inter_corr = (np.sum(abs(inter_corrs)) - len(indices)) / (len(indices) * (len(indices) - 1))
-            print(f"Average inter-feature correlation: {avg_inter_corr:.3f}")
+
+    from data_info import disc_data
+    disc_data(dataset_config,X_np, y_np, feature_types)
 
     # Convert to torch tensors and continue with model training
     X = torch.tensor(X_np, dtype=torch.float32, device=device)
@@ -426,8 +355,10 @@ def main():
     best_subset = None
     
     for episode in range(n_episodes):
-        temp = max(1.0 - episode / n_episodes, 0.1)
-        
+        temp = max(8.0 - (8*episode) / n_episodes, 0.3)
+        #temperature = max(min(temperature, 5.0), 0.3)
+
+
         trajectories = []
         feature_subsets = []
         
