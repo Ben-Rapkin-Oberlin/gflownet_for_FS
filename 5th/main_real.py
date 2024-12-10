@@ -24,7 +24,7 @@ VISUALIZATION_CONFIG = {
     'Random Forest': True,
     'Sequential Selection': True,
     'Pearson Correlation': True,
-    'Distance Correlation': True
+    'Distance Correlation': False
 }
 
 def load_and_preprocess_data(data_path, target_column, test_size=0.2, random_state=41):
@@ -42,6 +42,9 @@ def load_and_preprocess_data(data_path, target_column, test_size=0.2, random_sta
     """
     # Load the data
     df = pd.read_csv(data_path,nrows=100000)
+    print(df.columns.get_loc("DEPARTS"))
+    #exit()
+    df = df.drop(df.iloc[:, 120:],axis = 1)
     
     # Separate features and target
     X = df.drop(columns=[target_column])
@@ -84,8 +87,8 @@ def main():
     DATA_PATH = "encoded_departs.csv"  # Replace with your dataset path
     TARGET_COLUMN = "DEPARTS"     # Replace with your target column name
     n_select = 10  # Number of features to select
-    n_episodes = 1
-    batch_size = 6
+    n_episodes = 600
+    batch_size = 2
     
     # Device setup
     DEVICE_COUNT = torch.cuda.device_count()
@@ -118,9 +121,9 @@ def main():
     model = ImprovedGFlowNet(
         num_elements=n_features,
         target_size=n_select,
-        hidden_dim=100,
-        num_heads=2,
-        num_layers=2,
+        hidden_dim=200,
+        num_heads=4,
+        num_layers=3,
         device=device
     )
     
@@ -157,7 +160,7 @@ def main():
         
         loss = model.train_step(trajectories, rewards, temp)
         
-        if episode % 50 == 0:
+        if episode % 15 == 0:
             elapsed = time.time() - start_time
             print(f"Episode {episode}, Loss: {loss:.4f}, "
                   f"Best MSE: {best_mse:.4f}, "
@@ -196,47 +199,65 @@ def main():
     
     # Other feature selection methods
     # SelectKBest with f_regression
+    print('calculating f-reg')
+    a=time.time()
     selector = SelectKBest(score_func=f_regression, k=n_select)
     selector.fit(X_train_np, y_train_np)
     selected_features = np.where(selector.get_support())[0]
     mse = evaluate_single_subset(X_train_np, y_train_np, selected_features)
     results['SelectKBest (f_regression)'] = {'features': selected_features, 'mse': mse}
-    
+    print(time.time()-a)
+
     # SelectKBest with mutual_info_regression
+    print('calculating MI')
+    a=time.time()
     selector = SelectKBest(score_func=mutual_info_regression, k=n_select)
     selector.fit(X_train_np, y_train_np)
     selected_features = np.where(selector.get_support())[0]
     mse = evaluate_single_subset(X_train_np, y_train_np, selected_features)
     results['SelectKBest (mutual_info)'] = {'features': selected_features, 'mse': mse}
-    
+    print(time.time()-a)
+
     # Random Forest Importance
+    print('calculating RF')
+    a=time.time()
     model_rf = RandomForestRegressor(n_estimators=100, random_state=SEED)
     model_rf.fit(X_train_np, y_train_np)
     importances = model_rf.feature_importances_
     selected_features = np.argsort(importances)[::-1][:n_select]
     mse = evaluate_single_subset(X_train_np, y_train_np, selected_features)
     results['Random Forest'] = {'features': selected_features, 'mse': mse}
-    
+    print(time.time()-a)
+
     # Sequential Feature Selection
+    print('calculating SFS')
+    a=time.time()
     selected_features_seq, mse_seq = sequential_feature_selection(
         X_train_np, y_train_np, n_select
     )
     results['Sequential Selection'] = {'features': selected_features_seq, 'mse': mse_seq}
-    
+    print(time.time()-a)
+
     # Pearson correlation selection
+    print('calculating P')
+    a=time.time()
     selected_features_pearson = pearson_feature_selection(X_train_np, y_train_np, n_select)
     mse_pearson = evaluate_single_subset(X_train_np, y_train_np, selected_features_pearson)
     results['Pearson Correlation'] = {
         'features': selected_features_pearson, 
         'mse': mse_pearson
     }
-    
+    print(time.time()-a)
+
     # Distance correlation selection
-    dcor = distance_correlation(X_train_np, y_train_np)
-    selected_features_dcor = np.argsort(dcor)[::-1][:n_select]
-    mse_dcor = evaluate_single_subset(X_train_np, y_train_np, selected_features_dcor)
-    results['Distance Correlation'] = {'features': selected_features_dcor, 'mse': mse_dcor}
-    
+    #print('calculating DC')
+    #a=time.time()
+    #dcor = distance_correlation(X_train_np, y_train_np)
+    #selected_features_dcor = np.argsort(dcor)[::-1][:n_select]
+    #mse_dcor = evaluate_single_subset(X_train_np, y_train_np, selected_features_dcor)
+    #results['Distance Correlation'] = {'features': selected_features_dcor, 'mse': mse_dcor}
+    #print(time.time()-a)
+
     # Print comparison
     print("\n=== Feature Selection Methods Comparison ===")
     for method, data in results.items():

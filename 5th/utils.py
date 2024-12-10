@@ -407,5 +407,5 @@ VISUALIZATION_CONFIG = {
     'Random Forest': True,
     'Sequential Selection': True,
     'Pearson Correlation': True,
-    'Distance Correlation': True
+    'Distance Correlation': False
 }

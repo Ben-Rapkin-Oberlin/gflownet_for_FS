@@ -158,7 +158,7 @@ class ImprovedGFlowNet(nn.Module):
         self.optimizer.zero_grad()
         
         # Process in smaller batches to save memory
-        batch_size = 32
+        batch_size = 36
         total_loss = 0
         num_batches = (len(trajectories) + batch_size - 1) // batch_size
         
