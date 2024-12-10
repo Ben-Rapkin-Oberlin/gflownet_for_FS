@@ -36,6 +36,11 @@ class ImprovedGFlowNet(nn.Module):
         self.feature_params = nn.ParameterList()
         self.attention_params = nn.ParameterList()
         self.output_params = nn.ParameterList()
+
+        # Add running statistics for reward normalization
+        self.register_buffer('reward_mean', torch.zeros(1))
+        self.register_buffer('reward_std', torch.ones(1))
+        self.reward_momentum = 0.99
         
         # Efficient embedding with weight sharing
         self.feature_embedding = nn.Sequential(
@@ -91,9 +96,9 @@ class ImprovedGFlowNet(nn.Module):
     def _create_optimizer(self):
         """Create optimizer with different parameter groups"""
         return optim.AdamW([
-            {'params': self.feature_params, 'lr': 0.001},
-            {'params': self.attention_params, 'lr': 0.0005},
-            {'params': self.output_params, 'lr': 0.001}
+            {'params': self.feature_params, 'lr': 0.003},
+            {'params': self.attention_params, 'lr': 0.002},
+            {'params': self.output_params, 'lr': 0.003}
         ], weight_decay=0.01)
 
     @torch.amp.autocast('cuda')  # Updated decorator
@@ -169,7 +174,18 @@ class ImprovedGFlowNet(nn.Module):
                 states[idx, trajectory] = 1
             
             batch_rewards = torch.tensor(batch_rewards, device=self.device).unsqueeze(1)
-            
+            # Update running statistics and normalize rewards
+            with torch.no_grad():
+                batch_mean = batch_rewards.mean()
+                batch_std = batch_rewards.std() + 1e-8
+                
+                # Update running statistics
+                self.reward_mean = self.reward_momentum * self.reward_mean + (1 - self.reward_momentum) * batch_mean
+                self.reward_std = self.reward_momentum * self.reward_std + (1 - self.reward_momentum) * batch_std
+                
+            # Normalize using running statistics instead of batch statistics
+            batch_rewards = (batch_rewards -self.reward_mean) / (self.reward_std + 1e-8)
+
             with autocast():
                 flows, _ = self(states)
                 loss = F.mse_loss(flows, batch_rewards)

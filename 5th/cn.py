@@ -289,6 +289,9 @@ def main():
         print("Using CPU")
     
 
+    # Configuration 1: High Noise, Complex Relationships
+    # Tests ability to find signal in very noisy data with complex feature interactions
+    
     dataset_config = {
         'n_samples': 1000,
         'n_features': n_features,
@@ -316,6 +319,7 @@ def main():
         'outlier_config': None,             # No outliers
         'heteroscedastic_noise': None       # Homoscedastic noise only
     }
+
 
 
 
