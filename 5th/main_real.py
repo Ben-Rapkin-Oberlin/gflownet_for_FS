@@ -41,11 +41,21 @@ def load_and_preprocess_data(data_path, target_column, test_size=0.2, random_sta
         tuple: (X_train_np, X_test_np, y_train_np, y_test_np, feature_names, feature_types)
     """
     # Load the data
-    df = pd.read_csv(data_path,nrows=100000)
-    print(df.columns.get_loc("DEPARTS"))
+    df = pd.read_csv(data_path)#,nrows=1000)
+    df = df.drop(columns=['CONSPUMA', 'CPUMA0010','APPAL','APPALD'])
+
+    #print(df.columns.get_loc("DEPARTS"))
+    #print(df.columns.get_loc("ARRIVES"))
+
     #exit()
-    df = df.drop(df.iloc[:, 120:],axis = 1)
-    
+    df = df.drop(df.iloc[:, 300:],axis = 1)
+    if target_column == 'DEPARTS':
+        print ('Departs True')
+
+    df = df.drop(df[df['DEPARTS'] == 0].index)#, inplace = True)
+    drop_indices = np.random.choice(df.index, 500000, replace=False)
+    df = df.drop(drop_indices)
+
     # Separate features and target
     X = df.drop(columns=[target_column])
     y = df[target_column]
@@ -87,7 +97,7 @@ def main():
     DATA_PATH = "encoded_departs.csv"  # Replace with your dataset path
     TARGET_COLUMN = "DEPARTS"     # Replace with your target column name
     n_select = 10  # Number of features to select
-    n_episodes = 600
+    n_episodes = 2000
     batch_size = 2
     
     # Device setup
@@ -121,7 +131,7 @@ def main():
     model = ImprovedGFlowNet(
         num_elements=n_features,
         target_size=n_select,
-        hidden_dim=200,
+        hidden_dim=320,
         num_heads=4,
         num_layers=3,
         device=device
@@ -160,7 +170,7 @@ def main():
         
         loss = model.train_step(trajectories, rewards, temp)
         
-        if episode % 15 == 0:
+        if episode % 10 == 0:
             elapsed = time.time() - start_time
             print(f"Episode {episode}, Loss: {loss:.4f}, "
                   f"Best MSE: {best_mse:.4f}, "
@@ -271,7 +281,7 @@ def main():
                 print(f"  {idx}: {feature_names[idx]}")
 
     # Create visualization
-    visualize_results2(results, feature_names, str(time.time()))
+    visualize_results2(results, feature_names, str(time.time()),n_episodes)
 
 
 if __name__ == "__main__":

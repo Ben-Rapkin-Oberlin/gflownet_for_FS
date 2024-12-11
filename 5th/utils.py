@@ -58,7 +58,7 @@ def pearson_feature_selection(X, y, n_select):
     selected_features = np.argsort(np.abs(correlations))[::-1][:n_select]
     return selected_features
 
-def visualize_results(results, feature_types, timestamp):
+def visualize_results(results, feature_types, timestamp,epochs):
     """Create visualization of results based on configuration."""
     filtered_results = {k: v for k, v in results.items() if VISUALIZATION_CONFIG.get(k, False)}
     
@@ -116,7 +116,7 @@ def visualize_results(results, feature_types, timestamp):
     ax2.legend()
 
     plt.tight_layout()
-    plt.savefig(f'TEST_feature_selection_comparison_synthetic_{timestamp}.png', 
+    plt.savefig(f'{epochs}_REAL_{timestamp}.png', 
                 bbox_inches='tight', 
                 dpi=300,
                 pad_inches=0.2)
@@ -270,7 +270,7 @@ def ensure_cpu(val):
     return val
 
 
-def visualize_results2(results, feature_names, timestamp):
+def visualize_results2(results, feature_names, timestamp,epochs):
     """
     Visualize feature selection results for real data.
     
@@ -343,7 +343,7 @@ def visualize_results2(results, feature_names, timestamp):
     
     # Adjust layout and save
     plt.tight_layout()
-    plt.savefig(f'feature_selection_comparison_{timestamp}.png', 
+    plt.savefig(f'{epochs}_Real_Departs_{timestamp}.png', 
                 bbox_inches='tight', dpi=300)
     plt.close()
 
